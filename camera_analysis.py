@@ -12,6 +12,8 @@ import tempfile
 import queue
 import webrtcvad # Added for VAD
 
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
 # Configuration
 API_KEY = os.environ.get("GOOGLE_API_KEY")  # Set your API key as an environment variable
 TEMP_DIR = Path(tempfile.gettempdir()) / "gemini_camera_analysis"
@@ -26,7 +28,6 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 CHUNK_SIZE = int(RATE * CHUNK_DURATION_MS / 1000)  # frames per buffer
-# RECORD_SECONDS = 5  # No longer needed for fixed segments
 VAD_AGGRESSIVENESS = 3  # 0 (least aggressive) to 3 (most aggressive)
 SILENCE_THRESHOLD_FRAMES = int(1.0 * RATE / CHUNK_SIZE) # 1 second of silence to end segment
 MIN_SPEECH_FRAMES = int(0.5 * RATE / CHUNK_SIZE) # Minimum 0.5 seconds of speech
@@ -50,13 +51,32 @@ def capture_video():
                 print("Failed to grab frame")
                 break
                 
-            # Display the frame
-            cv2.imshow("Camera Feed", frame)
-            
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
             # Add frame to processing queue (downsize for efficiency)
             small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
             video_queue.put(small_frame)
-            
+
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+            for (x, y, w, h) in faces:
+                # Draw rectangle around face
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+                # Draw something above the head
+                label_text = "-10000 social credit"
+                label_y = max(0, y - 20)  # ensure it's not off-screen
+
+                # Draw a filled rectangle for label background (optional)
+                cv2.rectangle(frame, (x, label_y - 20), (x + w, label_y), (0, 0, 0), -1)
+                
+                # Draw label
+                cv2.putText(frame, label_text, (x + 5, label_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+            # Only show one window now
+            cv2.imshow('Face + Above Head Drawing', frame)
+
             # Break loop on 'q' key
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
@@ -174,6 +194,7 @@ def process_media():
                     except OSError as unlink_error:
                         print(f"Error deleting temp image file {temp_img_path}: {unlink_error}")
             
+
             # Process audio if available
             if not audio_queue.empty():
                 audio_path = audio_queue.get()
@@ -273,4 +294,4 @@ def main():
             pass
 
 if __name__ == "__main__":
-    main() 
+    main()
